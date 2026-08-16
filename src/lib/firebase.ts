@@ -5,6 +5,7 @@ import {
   doc, 
   setDoc, 
   getDoc,
+  getDocs,
   deleteDoc, 
   updateDoc, 
   onSnapshot,
@@ -247,11 +248,52 @@ export async function updateOrderInFirestore(orderId: string, updates: Partial<O
 export async function deleteOrderFromFirestore(orderId: string): Promise<void> {
   try {
     const docRef = doc(db, ORDERS_COLLECTION, orderId);
-    await deleteDoc(docRef);
+    await deleteDoc(docRef).catch(() => {});
+    
+    const snap = await getDocs(collection(db, ORDERS_COLLECTION));
+    const toDelete: Promise<void>[] = [];
+    snap.forEach((d) => {
+      const data = d.data();
+      if (d.id === orderId || data.id === orderId || data.orderNumber === orderId) {
+        toDelete.push(deleteDoc(d.ref));
+      }
+    });
+    if (toDelete.length > 0) {
+      await Promise.all(toDelete);
+    }
     console.log("Order deleted from Firestore successfully:", orderId);
   } catch (error) {
     console.error("Error deleting order from Firestore:", error);
-    throw error;
+  }
+}
+
+/**
+ * Delete all orders or specific list of orders from Firestore
+ */
+export async function deleteAllOrdersFromFirestore(orderIds?: string[]): Promise<void> {
+  try {
+    if (orderIds && orderIds.length > 0) {
+      const idsSet = new Set(orderIds);
+      const snap = await getDocs(collection(db, ORDERS_COLLECTION));
+      const deletePromises: Promise<void>[] = [];
+      snap.forEach((d) => {
+        const data = d.data();
+        if (idsSet.has(d.id) || (data.id && idsSet.has(data.id)) || (data.orderNumber && idsSet.has(data.orderNumber))) {
+          deletePromises.push(deleteDoc(d.ref));
+        }
+      });
+      await Promise.all(deletePromises);
+    } else {
+      const snap = await getDocs(collection(db, ORDERS_COLLECTION));
+      const deletePromises: Promise<void>[] = [];
+      snap.forEach((d) => {
+        deletePromises.push(deleteDoc(d.ref));
+      });
+      await Promise.all(deletePromises);
+    }
+    console.log("All requested orders deleted from Firestore successfully");
+  } catch (error) {
+    console.error("Error clearing orders from Firestore:", error);
   }
 }
 
@@ -270,7 +312,7 @@ export function subscribeToOrders(
         const list: Order[] = [];
         snapshot.forEach((docSnap) => {
           const data = docSnap.data() as Order;
-          list.push(data);
+          list.push({ ...data, id: data.id || docSnap.id });
         });
         onSuccess(list);
       },
@@ -281,7 +323,8 @@ export function subscribeToOrders(
         onSnapshot(fallbackCol, (snap) => {
           const list: Order[] = [];
           snap.forEach((docSnap) => {
-            list.push(docSnap.data() as Order);
+            const data = docSnap.data() as Order;
+            list.push({ ...data, id: data.id || docSnap.id });
           });
           onSuccess(list);
         }, onError);

@@ -35,6 +35,7 @@ import {
   saveOrderToFirestore,
   updateOrderInFirestore,
   deleteOrderFromFirestore,
+  deleteAllOrdersFromFirestore,
   savePaymentConfigsToFirestore,
   saveCouponsToFirestore
 } from './lib/firebase';
@@ -94,7 +95,7 @@ export default function App() {
   useEffect(() => {
     // 1. Subscribe to Live Orders from Firestore
     const unsubscribeOrders = subscribeToOrders((firestoreOrders) => {
-      if (firestoreOrders && firestoreOrders.length > 0) {
+      if (Array.isArray(firestoreOrders)) {
         setOrders(firestoreOrders);
       }
     });
@@ -160,13 +161,42 @@ export default function App() {
     saveOrderToFirestore(newOrder).catch((e) => console.warn('Firestore background save notice:', e));
   };
 
-  // Sync admin updates with Firestore
+  // Sync admin updates with Firestore (handles additions, modifications, and deletions)
   const handleAdminUpdateOrders = (newOrdersList: Order[]) => {
-    setOrders(newOrdersList);
-    // Find modified or new items and sync them
+    const currentOrders = [...orders];
+    // Find removed orders to delete from Firestore
+    const removedOrders = currentOrders.filter(
+      oldOrder => !newOrdersList.some(n => n.id === oldOrder.id || n.orderNumber === oldOrder.orderNumber)
+    );
+    
+    removedOrders.forEach(rem => {
+      deleteOrderFromFirestore(rem.id).catch((e) => console.warn('Delete firestore order error:', e));
+    });
+
+    // Save or update existing orders
     newOrdersList.forEach((order) => {
       saveOrderToFirestore(order).catch((e) => console.warn('Order firestore sync error:', e));
     });
+
+    setOrders(newOrdersList);
+  };
+
+  const handleDeleteSingleOrder = (orderId: string) => {
+    setOrders(prev => prev.filter(o => o.id !== orderId && o.orderNumber !== orderId));
+    deleteOrderFromFirestore(orderId).catch(err => console.warn('Delete order error:', err));
+  };
+
+  const handleClearAllOrders = async (orderIdsToClear?: string[]) => {
+    if (!orderIdsToClear || orderIdsToClear.length === 0 || orderIdsToClear.length >= orders.length) {
+      setOrders([]);
+      try {
+        localStorage.removeItem('ecom360_orders');
+      } catch {}
+      await deleteAllOrdersFromFirestore().catch(err => console.warn('Clear all firestore error:', err));
+    } else {
+      setOrders(prev => prev.filter(o => !orderIdsToClear.includes(o.id) && !orderIdsToClear.includes(o.orderNumber)));
+      await deleteAllOrdersFromFirestore(orderIdsToClear).catch(err => console.warn('Clear partial firestore error:', err));
+    }
   };
 
   const handleAdminUpdatePaymentConfigs = (newConfigs: PaymentConfig[]) => {
@@ -393,6 +423,8 @@ export default function App() {
         onClose={() => setIsAdminOpen(false)}
         orders={orders}
         onUpdateOrders={handleAdminUpdateOrders}
+        onDeleteSingleOrder={handleDeleteSingleOrder}
+        onClearAllOrders={handleClearAllOrders}
         paymentConfigs={paymentConfigs}
         onUpdatePaymentConfigs={handleAdminUpdatePaymentConfigs}
         coupons={coupons}

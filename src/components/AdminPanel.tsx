@@ -7,13 +7,15 @@ import {
 } from 'lucide-react';
 import { PaymentConfig, Order, Coupon, UserProfile } from '../types';
 import { BOOK_DETAILS } from '../data/bookData';
-import { ADMIN_EMAIL } from '../lib/firebase';
+import { ADMIN_EMAIL, deleteOrderFromFirestore, deleteAllOrdersFromFirestore } from '../lib/firebase';
 
 interface AdminPanelProps {
   isOpen: boolean;
   onClose: () => void;
   orders: Order[];
   onUpdateOrders: (orders: Order[]) => void;
+  onDeleteSingleOrder?: (orderId: string) => void;
+  onClearAllOrders?: (orderIds?: string[]) => void;
   paymentConfigs: PaymentConfig[];
   onUpdatePaymentConfigs: (configs: PaymentConfig[]) => void;
   coupons: Coupon[];
@@ -29,6 +31,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   onClose,
   orders,
   onUpdateOrders,
+  onDeleteSingleOrder,
+  onClearAllOrders,
   paymentConfigs,
   onUpdatePaymentConfigs,
   coupons,
@@ -45,6 +49,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [uploadSuccess, setUploadSuccess] = useState(false);
   const [copiedTrxId, setCopiedTrxId] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
+
+  // In-App Delete Confirmation Modals (Never rely on browser confirm() in iframe)
+  const [deleteModalOrder, setDeleteModalOrder] = useState<Order | null>(null);
+  const [showClearAllModal, setShowClearAllModal] = useState(false);
+  const [showClearRejectedModal, setShowClearRejectedModal] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Local state for payment configs editing
   const [editableConfigs, setEditableConfigs] = useState<PaymentConfig[]>(paymentConfigs);
@@ -95,7 +105,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     if (!file) return;
 
     if (file.type !== 'application/pdf' && !file.name.endsWith('.pdf')) {
-      alert('অনুগ্রহ করে একটি সঠিক .pdf ফাইল নির্বাচন করুন।');
+      setActionNotice('অনুগ্রহ করে একটি সঠিক .pdf ফাইল নির্বাচন করুন।');
+      setTimeout(() => setActionNotice(null), 3000);
       return;
     }
 
@@ -157,12 +168,94 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setTimeout(() => setActionNotice(null), 3000);
   };
 
-  const handleDeleteOrder = (orderId: string) => {
-    if (confirm('আপনি কি নিশ্চিত যে এই অর্ডার রেকর্ডটি মুছে ফেলতে চান?')) {
-      const updated = orders.filter(o => o.id !== orderId && o.orderNumber !== orderId);
-      onUpdateOrders(updated);
-      setActionNotice('অর্ডারটি মুছে ফেলা হয়েছে।');
-      setTimeout(() => setActionNotice(null), 2500);
+  // Trigger In-App Delete Modals
+  const handleDeleteOrder = (order: Order) => {
+    setDeleteModalOrder(order);
+  };
+
+  const handleConfirmDeleteSingle = async () => {
+    if (!deleteModalOrder) return;
+    const target = deleteModalOrder;
+    setIsDeleting(true);
+    try {
+      if (onDeleteSingleOrder) {
+        onDeleteSingleOrder(target.id);
+      } else {
+        const updated = orders.filter(o => o.id !== target.id && o.orderNumber !== target.id);
+        onUpdateOrders(updated);
+        await deleteOrderFromFirestore(target.id);
+      }
+      setActionNotice(`অর্ডারটি (${target.orderNumber || target.id}) সফলভাবে মুছে ফেলা হয়েছে।`);
+    } catch (err) {
+      console.warn('Delete single order error:', err);
+    } finally {
+      setIsDeleting(false);
+      setDeleteModalOrder(null);
+      setTimeout(() => setActionNotice(null), 3000);
+    }
+  };
+
+  const handleClearAllOrdersClick = () => {
+    if (orders.length === 0) {
+      setActionNotice('মুছে ফেলার মতো কোনো অর্ডার নেই।');
+      setTimeout(() => setActionNotice(null), 2000);
+      return;
+    }
+    setShowClearAllModal(true);
+  };
+
+  const handleConfirmClearAll = async () => {
+    setIsDeleting(true);
+    try {
+      if (onClearAllOrders) {
+        await onClearAllOrders();
+      } else {
+        onUpdateOrders([]);
+        await deleteAllOrdersFromFirestore();
+      }
+      setActionNotice('সকল অর্ডার সফলভাবে ডাটাবেজ থেকে মুছে ফেলা হয়েছে!');
+    } catch (err) {
+      console.warn('Clear all orders error:', err);
+    } finally {
+      setIsDeleting(false);
+      setShowClearAllModal(false);
+      setTimeout(() => setActionNotice(null), 3000);
+    }
+  };
+
+  const handleClearRejectedOrdersClick = () => {
+    const rejected = orders.filter(o => o.status === 'rejected');
+    if (rejected.length === 0) {
+      setActionNotice('কোনো বাতিলকৃত অর্ডার নেই।');
+      setTimeout(() => setActionNotice(null), 2000);
+      return;
+    }
+    setShowClearRejectedModal(true);
+  };
+
+  const handleConfirmClearRejected = async () => {
+    const rejected = orders.filter(o => o.status === 'rejected');
+    if (rejected.length === 0) {
+      setShowClearRejectedModal(false);
+      return;
+    }
+    const rejectedIds = rejected.map(r => r.id);
+    setIsDeleting(true);
+    try {
+      if (onClearAllOrders) {
+        await onClearAllOrders(rejectedIds);
+      } else {
+        const updated = orders.filter(o => o.status !== 'rejected');
+        onUpdateOrders(updated);
+        await deleteAllOrdersFromFirestore(rejectedIds);
+      }
+      setActionNotice('সকল বাতিলকৃত অর্ডার মুছে ফেলা হয়েছে।');
+    } catch (err) {
+      console.warn('Clear rejected error:', err);
+    } finally {
+      setIsDeleting(false);
+      setShowClearRejectedModal(false);
+      setTimeout(() => setActionNotice(null), 3000);
     }
   };
 
@@ -459,14 +552,43 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   </button>
                 </div>
 
-                {/* Add Manual Order Button */}
-                <button
-                  onClick={() => setShowAddOrderForm(!showAddOrderForm)}
-                  className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-slate-700 flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>ম্যানুয়াল নাম্বার যোগ করুন</span>
-                </button>
+                {/* Action Buttons */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Add Manual Order Button */}
+                  <button
+                    onClick={() => setShowAddOrderForm(!showAddOrderForm)}
+                    className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-slate-700 flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>ম্যানুয়াল নাম্বার যোগ করুন</span>
+                  </button>
+
+                  {/* Clear Rejected Orders */}
+                  {rejectedOrdersCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleClearRejectedOrdersClick}
+                      className="px-3 py-2 rounded-xl bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 text-xs font-bold border border-rose-800/40 flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0"
+                      title="সকল বাতিলকৃত অর্ডার মুছে ফেলুন"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                      <span>বাতিল অর্ডার মুছুন ({rejectedOrdersCount})</span>
+                    </button>
+                  )}
+
+                  {/* Clear All Orders Button */}
+                  {orders.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleClearAllOrdersClick}
+                      className="px-3 py-2 rounded-xl bg-red-900/30 hover:bg-red-800/50 text-red-300 hover:text-white text-xs font-bold border border-red-700/50 flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0"
+                      title="ডাটাবেজ থেকে সমস্ত অর্ডার মুছে ফ্রেশ শুরু করুন"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                      <span>সব অর্ডার মুছুন</span>
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* Manual Add Order Form */}
@@ -686,11 +808,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
                                   {/* Delete */}
                                   <button
-                                    onClick={() => handleDeleteOrder(order.id)}
-                                    className="p-1.5 rounded hover:bg-red-500/20 text-slate-500 hover:text-red-400 transition-colors cursor-pointer ml-1"
-                                    title="অর্ডার রেকর্ড ডিলিট করুন"
+                                    type="button"
+                                    onClick={() => handleDeleteOrder(order)}
+                                    className="p-1.5 px-2 rounded-lg bg-rose-500/10 hover:bg-rose-500/25 text-rose-400 hover:text-rose-300 border border-rose-500/20 transition-colors cursor-pointer ml-1 flex items-center gap-1 text-[11px]"
+                                    title="অর্ডার রেকর্ড ডাটাবেজ থেকে স্থায়ীভাবে ডিলিট করুন"
                                   >
                                     <Trash2 className="w-3.5 h-3.5" />
+                                    <span className="hidden xl:inline">মুছুন</span>
                                   </button>
                                 </div>
                               </td>
@@ -911,6 +1035,152 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
         </div>
       </div>
+
+      {/* ========================================================= */}
+      {/* IN-APP CONFIRMATION MODALS (100% Reliable In All Browsers) */}
+      {/* ========================================================= */}
+
+      {/* 1. Single Order Delete Modal */}
+      {deleteModalOrder && (
+        <div className="fixed inset-0 z-[120] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-rose-500/40 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-3 text-rose-400 pb-2 border-b border-slate-800">
+              <div className="p-2.5 rounded-xl bg-rose-500/15 border border-rose-500/30">
+                <Trash2 className="w-5 h-5 text-rose-400" />
+              </div>
+              <div>
+                <h3 className="font-bold text-base text-white">এই অর্ডারটি মুছে ফেলতে চান?</h3>
+                <p className="text-xs text-slate-400">অর্ডার রেকর্ডটি ক্লাউড ডাটাবেজ থেকে স্থায়ীভাবে মুছে যাবে</p>
+              </div>
+            </div>
+
+            <div className="bg-slate-950/80 rounded-xl p-3.5 border border-slate-800 space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-slate-400">অর্ডার নাম্বার:</span>
+                <span className="font-mono font-bold text-white">#{deleteModalOrder.orderNumber || deleteModalOrder.id.slice(-8)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">গ্রাহকের নাম:</span>
+                <span className="font-semibold text-white">{deleteModalOrder.customerName}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">মোবাইল নাম্বার:</span>
+                <span className="font-mono text-white">{deleteModalOrder.customerPhone}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">TrxID:</span>
+                <span className="font-mono font-bold text-emerald-400">{deleteModalOrder.trxId}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">টাকার পরিমাণ:</span>
+                <span className="font-bold text-amber-400">৳{deleteModalOrder.amount}</span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2.5 pt-2">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={handleConfirmDeleteSingle}
+                className="flex-1 py-2.5 px-4 bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white font-bold text-xs sm:text-sm rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-rose-900/30"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>{isDeleting ? 'মুছে ফেলা হচ্ছে...' : 'হ্যাঁ, সম্পূর্ণ মুছে ফেলুন'}</span>
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setDeleteModalOrder(null)}
+                className="py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs sm:text-sm rounded-xl transition-colors cursor-pointer"
+              >
+                বাতিল
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 2. Clear All Orders Modal */}
+      {showClearAllModal && (
+        <div className="fixed inset-0 z-[120] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-red-500/40 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-3 text-red-400 pb-2 border-b border-slate-800">
+              <div className="p-2.5 rounded-xl bg-red-500/15 border border-red-500/30">
+                <AlertCircle className="w-5 h-5 text-red-400" />
+              </div>
+              <div>
+                <h3 className="font-bold text-base text-white">সকল অর্ডার মুছে ফেলতে চান?</h3>
+                <p className="text-xs text-slate-400">মোট {orders.length} টি অর্ডার রেকর্ড সম্পূর্ণ মুছে যাবে</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed bg-red-950/30 p-3 rounded-xl border border-red-800/40">
+              ⚠️ সতর্কবার্তা: এটি করলে আপনার ডাটাবেজের সমস্ত টেস্ট বা পূর্ববর্তী অর্ডার মুছে অ্যাডমিন প্যানেল একদম ফ্রেশ ও খালি হয়ে যাবে।
+            </p>
+
+            <div className="flex items-center gap-2.5 pt-2">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={handleConfirmClearAll}
+                className="flex-1 py-2.5 px-4 bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white font-bold text-xs sm:text-sm rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-red-900/30"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>{isDeleting ? 'সব মোছা হচ্ছে...' : `হ্যাঁ, সব (${orders.length}টি) অর্ডার মুছুন`}</span>
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setShowClearAllModal(false)}
+                className="py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs sm:text-sm rounded-xl transition-colors cursor-pointer"
+              >
+                বাতিল
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 3. Clear Rejected Orders Modal */}
+      {showClearRejectedModal && (
+        <div className="fixed inset-0 z-[120] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-rose-500/40 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-3 text-rose-400 pb-2 border-b border-slate-800">
+              <div className="p-2.5 rounded-xl bg-rose-500/15 border border-rose-500/30">
+                <Trash2 className="w-5 h-5 text-rose-400" />
+              </div>
+              <div>
+                <h3 className="font-bold text-base text-white">বাতিলকৃত অর্ডার মুছে ফেলা</h3>
+                <p className="text-xs text-slate-400">সকল বাতিল (Rejected) অর্ডার ডাটাবেজ থেকে ক্লিন হবে</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed bg-slate-950 p-3 rounded-xl border border-slate-800">
+              মোট {rejectedOrdersCount} টি বাতিলকৃত অর্ডার ডাটাবেজ থেকে সম্পূর্ণ মুছে ফেলা হবে।
+            </p>
+
+            <div className="flex items-center gap-2.5 pt-2">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={handleConfirmClearRejected}
+                className="flex-1 py-2.5 px-4 bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white font-bold text-xs sm:text-sm rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-2"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>{isDeleting ? 'মোছা হচ্ছে...' : 'হ্যাঁ, বাতিলগুলো মুছুন'}</span>
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setShowClearRejectedModal(false)}
+                className="py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs sm:text-sm rounded-xl transition-colors cursor-pointer"
+              >
+                বাতিল
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
