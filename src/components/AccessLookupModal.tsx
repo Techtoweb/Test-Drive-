@@ -114,12 +114,6 @@ export const AccessLookupModal: React.FC<AccessLookupModalProps> = ({
               alt={BOOK_DETAILS.title} 
               className="w-10 h-14 object-cover rounded-md shadow-sm border border-slate-700 shrink-0" 
               referrerPolicy="no-referrer"
-              onError={(e) => {
-                const target = e.currentTarget;
-                if (target.src !== '/book_cover.jpg' && !target.src.endsWith('/book_cover.jpg')) {
-                  target.src = '/book_cover.jpg';
-                }
-              }}
             />
             <div className="min-w-0">
               <h4 className="font-extrabold text-xs text-white truncate font-['Outfit',sans-serif]">

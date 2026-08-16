@@ -34,12 +34,6 @@ export const Footer: React.FC<FooterProps> = ({
                 alt="Tech To Web" 
                 className="h-12 sm:h-14 w-auto max-w-[260px] object-contain drop-shadow-md"
                 referrerPolicy="no-referrer"
-                onError={(e) => {
-                  const target = e.currentTarget;
-                  if (target.src !== '/tech_to_web_transparent.png' && !target.src.endsWith('/tech_to_web_transparent.png')) {
-                    target.src = '/tech_to_web_transparent.png';
-                  }
-                }}
               />
             </div>
 

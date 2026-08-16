@@ -451,12 +451,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   alt={BOOK_DETAILS.title} 
                   className="w-full h-full object-cover" 
                   referrerPolicy="no-referrer"
-                  onError={(e) => {
-                    const target = e.currentTarget;
-                    if (target.src !== '/book_cover.jpg' && !target.src.endsWith('/book_cover.jpg')) {
-                      target.src = '/book_cover.jpg';
-                    }
-                  }}
                 />
               </div>
               <div className="flex-1 min-w-0">

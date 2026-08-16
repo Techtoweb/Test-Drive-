@@ -50,12 +50,6 @@ export const BookCover: React.FC<BookCoverProps> = ({ size = 'md', className = '
             alt="The Complete Guide to E-Commerce 360 - S. M. Raihan" 
             className="w-full h-full object-cover rounded-r-xl"
             referrerPolicy="no-referrer"
-            onError={(e) => {
-              const target = e.currentTarget;
-              if (target.src !== '/book_cover.jpg' && !target.src.endsWith('/book_cover.jpg')) {
-                target.src = '/book_cover.jpg';
-              }
-            }}
           />
 
           {/* Subtle Paper Texture & Lighting Gloss */}

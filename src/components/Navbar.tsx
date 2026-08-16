@@ -74,12 +74,6 @@ export const Navbar: React.FC<NavbarProps> = ({
             alt="Tech To Web" 
             className="h-11 sm:h-14 w-auto max-w-[200px] sm:max-w-[320px] object-contain drop-shadow-md hover:scale-105 transition-transform duration-200"
             referrerPolicy="no-referrer"
-            onError={(e) => {
-              const target = e.currentTarget;
-              if (target.src !== '/tech_to_web_transparent.png' && !target.src.endsWith('/tech_to_web_transparent.png')) {
-                target.src = '/tech_to_web_transparent.png';
-              }
-            }}
           />
         </div>
 

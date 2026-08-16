@@ -57,12 +57,6 @@ export const SneakPeekModal: React.FC<SneakPeekModalProps> = ({
                 alt={BOOK_DETAILS.title} 
                 className="w-16 h-24 object-cover rounded-lg shadow-md border border-slate-700 shrink-0" 
                 referrerPolicy="no-referrer"
-                onError={(e) => {
-                  const target = e.currentTarget;
-                  if (target.src !== '/book_cover.jpg' && !target.src.endsWith('/book_cover.jpg')) {
-                    target.src = '/book_cover.jpg';
-                  }
-                }}
               />
               <div className="space-y-1">
                 <h2 className="text-lg sm:text-xl font-black text-white not-prose">
