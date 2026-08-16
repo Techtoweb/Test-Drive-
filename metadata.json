@@ -1,0 +1,6 @@
+{
+  "name": "E-Commerce 360 - eBook Landing Page & DRM Reader",
+  "description": "Premium landing page for selling E-Commerce 360 eBook with automated bKash, Nagad, Rocket, and Upay payment processing and protected online DRM PDF reader.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
